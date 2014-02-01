@@ -8,6 +8,7 @@ void unlock(int mutex);
 void lock(int mutex) {
 	while(mutex != 0)
 		sched_yield(); //Results in unfairness. Ideally should use spinlock. But netbook...fml.:
+	printf("Locking mutex.\n");
 	mutex = 1;
 }
 
