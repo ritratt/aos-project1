@@ -38,8 +38,8 @@ void fun_alarm_handler(int sig) {
 int gtthread_init(long period) {
 	//Create dummy thread for main and make it as queue head.
 	gtthread_t main_thread;
-	ucontext_t *main_context;
-	getcontext(main_context);
+	ucontext_t main_context;
+	getcontext(&main_context);
 	main_thread.tid = 1;
 	main_thread.state = RUNNING;
 	main_thread.context = main_context;
@@ -54,6 +54,7 @@ int gtthread_init(long period) {
 
 	//Set the timer
 	setitimer(ITIMER_VIRTUAL, &timer, NULL);
+
 
 	//Register signal handler
 	struct sigaction alarm_handler;
@@ -90,3 +91,6 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 
 	return 1;
 }
+
+
+
