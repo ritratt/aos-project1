@@ -12,6 +12,7 @@ typedef struct thread_t{
 	struct	thread_t *next;
 	ucontext_t context;
 	int state;
+	int joiners;
 }gtthread_t;
 
 struct queue {
@@ -33,13 +34,26 @@ void wrapper(void *(*fn) (void *), void *args) {
 	gtthread_exit();
 }
 
+gtthread_t* get_joinfree() {
+	gtthread_t *t = (struct gtthread_t *) malloc(sizeof(gtthread_t));
+	t = task_queue->head->next;
+	while(t != NULL) {
+		if(t->joiners == 0) 
+			return t;
+		else
+			t = t->next;
+	}
+	return t;
+}
+
 void fun_alarm_handler(int sig) {
 	printf("Thread quantum expired.\n");
 	gtthread_t *current_thread = task_queue->head;
 	printf("Current running thread is %d\n", current_thread->tid);
 	printf("Current tail is %d\n", task_queue->tail->tid);
 	if(current_thread->next != NULL) {
-		task_queue->head = current_thread->next;
+		task_queue->head = get_joinfree();
+		//task_queue->head = task_queue->head->next;
 		task_queue->tail->next = current_thread;
 	}
 	else {
@@ -60,7 +74,8 @@ void fun_alarm_handler(int sig) {
 		printf("Next tid is %d\n", current_head->tid);
 		printf("Current context is null.\n");
 	}
-	swapcontext(&current_context, &next_context);
+
+	swapcontext(&(task_queue->tail->context), &(task_queue->head->context));
 	return;
 }
 
@@ -94,6 +109,7 @@ int gtthread_init(long period) {
 	main_thread->tid = 1;
 	main_thread->state = RUNNING;
 	main_thread->context = main_context;
+	main_thread->joiners = 0;
 	task_queue->head = main_thread;
 	task_queue->tail= main_thread;
 	printf("As per init, current tail tid is %d\n", task_queue->tail->tid);
@@ -134,17 +150,18 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 	new_context.uc_stack.ss_sp=malloc(MEM);
 	new_context.uc_stack.ss_size=MEM;
 	new_context.uc_stack.ss_flags=0;
+	//makecontext(&new_context, fn, 0);
+
+	//Point makecontext to the wrapper function.
 	makecontext(&new_context, (void (*)(void))wrapper, 2,(void (*)(void)) fn, args);
 
-	//Must not swap on creation. Line below incorrect.
-	//swapcontext(&old_context, &new_context);
-	
 	//Increment thread count
 	thread_count++;
 	thread->context = new_context;
 	thread->tid = thread_count;
 	thread->state = RUNNING;
 	thread->next = NULL;
+	thread->joiners = 0;
 
 	//Put thread at the end of the queue
 	add_to_queue(thread);
@@ -152,8 +169,9 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 	return 1;
 }
 
-int gtthread_join(gtthread_t joinee, (void *) status) {
-	joinee->
+int gtthread_join(gtthread_t joinee, void **status) {
+
+	
 }
 int gtthread_yield() {
 	headtotail();
