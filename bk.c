@@ -5,6 +5,7 @@
 #define MEM 64000
 #define RUNNING 1
 #define READY 2
+#define FINISHED 3
 
 typedef struct thread_t{
 	int tid;
@@ -148,11 +149,12 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 	//Put thread at the end of the queue
 	add_to_queue(thread);
 
-	//reset timer
-
 	return 1;
 }
 
+int gtthread_join(gtthread_t joinee, (void *) status) {
+	joinee->
+}
 int gtthread_yield() {
 	headtotail();
 }
@@ -161,9 +163,22 @@ int gtthread_self() {
 	return task_queue->head->tid;
 }
 
-int gtthread_exit() {
-	task_queue->head = task_queue->head->next;
-	swapcontext(
+int gtthread_exit(void *retval) {
+	gtthread_t *current_head, *new_head;
+	current_head = (struct gtthread_t *) malloc(sizeof(gtthread_t));
+	new_head = (struct gtthread_t *) malloc(sizeof(gtthread_t));
+	
+	//Get current head and mark it has FINISHED.
+	current_head = task_queue->head;
+	current_head->state = FINISHED;
+
+	//New head is the head's next thread.
+	new_head = task_queue->head->next;
+	task_queue->head = new_head;
+	sleep(1);
+
+	//Swap the new head in.
+	swapcontext(&(current_head->context), &(new_head->context));
 	return 0;
 }
 	
@@ -182,8 +197,6 @@ int main() {
 	gtthread_init(1);
 	ucontext_t try;
 	getcontext(&try);
-//	gtthread_t *t1 = (struct gtthread_t *) malloc(sizeof(gtthread_t));
-//	gtthread_t *t2 = (struct gtthread_t *) malloc(sizeof(gtthread_t));
 	gtthread_t t1, t2;
 	//gtthread_t *t3 = (struct gtthread_t *) malloc(sizeof(gtthread_t));
 	gtthread_create(&t1, (void *) crapfn, NULL);
