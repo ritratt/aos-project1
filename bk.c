@@ -6,13 +6,16 @@
 #define RUNNING 1
 #define READY 2
 #define FINISHED 3
+#define JOINING 4
 
 typedef struct thread_t{
 	int tid;
 	struct	thread_t *next;
 	ucontext_t context;
 	int state;
-	int joiners;
+	int joiner_count;
+	void *ret;
+	int joinee_tid;
 }gtthread_t;
 
 struct queue {
@@ -30,18 +33,34 @@ struct itimerval timer;
 ucontext_t main_context;
 
 void wrapper(void *(*fn) (void *), void *args) {
-	fn(args);
-	gtthread_exit();
+	void *retval = fn(args);
+	puts("Exit gonna be called from wrapper");
+	gtthread_exit(retval);
+}
+	
+gtthread_t* get_thread(int thread_id) {
+	gtthread_t *t = task_queue->head;
+	
+	while(t->tid != thread_id) {
+		t = t->next;
+	}
+	if(t != NULL) {
+		return t;
+	}
+	else {
+		printf("Thread not found. Returning NULL.\n");
+	}
+	return NULL;
 }
 
 gtthread_t* get_joinfree() {
-	gtthread_t *t = (struct gtthread_t *) malloc(sizeof(gtthread_t));
-	t = task_queue->head->next;
+	gtthread_t *t; 
 	while(t != NULL) {
-		if(t->joiners == 0) 
+		t = task_queue->head->next;
+		if(t->state != JOINING) 
 			return t;
 		else
-			t = t->next;
+			headtotail();
 	}
 	return t;
 }
@@ -50,7 +69,6 @@ void fun_alarm_handler(int sig) {
 	printf("Thread quantum expired.\n");
 	gtthread_t *current_thread = task_queue->head;
 	printf("Current running thread is %d\n", current_thread->tid);
-	printf("Current tail is %d\n", task_queue->tail->tid);
 	if(current_thread->next != NULL) {
 		task_queue->head = get_joinfree();
 		//task_queue->head = task_queue->head->next;
@@ -109,7 +127,9 @@ int gtthread_init(long period) {
 	main_thread->tid = 1;
 	main_thread->state = RUNNING;
 	main_thread->context = main_context;
-	main_thread->joiners = 0;
+	main_thread->joiner_count = 0;
+	main_thread->ret = NULL;
+	main_thread->joinee_tid = 0;
 	task_queue->head = main_thread;
 	task_queue->tail= main_thread;
 	printf("As per init, current tail tid is %d\n", task_queue->tail->tid);
@@ -161,18 +181,42 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 	thread->tid = thread_count;
 	thread->state = RUNNING;
 	thread->next = NULL;
-	thread->joiners = 0;
-
+	thread->joiner_count = 0;
+	thread->ret = NULL;
+	thread->joinee_tid = 0;
 	//Put thread at the end of the queue
 	add_to_queue(thread);
 
 	return 1;
 }
 
-int gtthread_join(gtthread_t joinee, void **status) {
+int gtthread_join(gtthread_t joiner_thread, void **status) {
+	task_queue->head->state = JOINING;
 
+	//Increment joiners for current thread where join is called
+	task_queue->head->joiner_count = task_queue->head->joiner_count + 1;
 	
+	//Update joiner tid
+	gtthread_t *temp = task_queue->head;
+	//substitute this searhc with function call.
+	while(temp->tid != joiner_thread.tid)
+		temp = temp->next;
+	if(temp == NULL) {
+		printf("No thread found.\n");
+		return 2;
+	}
+	temp->joinee_tid = task_queue->head->tid;
+	
+	//Reschedule to change executing thread
+	fun_alarm_handler(1);
+	
+	//Put retval in status
+	//status = joiner.ret;
+	//return status;
+
+	return 0;
 }
+
 int gtthread_yield() {
 	headtotail();
 }
@@ -182,18 +226,27 @@ int gtthread_self() {
 }
 
 int gtthread_exit(void *retval) {
-	gtthread_t *current_head, *new_head;
-	current_head = (struct gtthread_t *) malloc(sizeof(gtthread_t));
-	new_head = (struct gtthread_t *) malloc(sizeof(gtthread_t));
+	gtthread_t *current_head = task_queue->head;
+	gtthread_t *new_head = current_head->next;
 	
+	//Assign retval to the executing head before it exits
+	task_queue->head->ret = retval;
+
 	//Get current head and mark it has FINISHED.
 	current_head = task_queue->head;
 	current_head->state = FINISHED;
 
+	//Decrement joinee count for the thread which this thread wants to join
+	gtthread_t *joinee_thread;// = (struct gtthread_t *) malloc(sizeof(gtthread_t));
+	int joinee_tid = current_head->joinee_tid;
+	joinee_thread = get_thread(joinee_tid);
+	joinee_thread->joiner_count = joinee_thread->joiner_count - 1;
+	joinee_thread->state = READY;
+
 	//New head is the head's next thread.
-	new_head = task_queue->head->next;
 	task_queue->head = new_head;
-	sleep(1);
+
+	//sleep(1);
 
 	//Swap the new head in.
 	swapcontext(&(current_head->context), &(new_head->context));
@@ -212,13 +265,12 @@ void morecrapfn() {
 }
 
 int main() {
-	gtthread_init(1);
-	ucontext_t try;
-	getcontext(&try);
+	gtthread_init(3);
 	gtthread_t t1, t2;
 	//gtthread_t *t3 = (struct gtthread_t *) malloc(sizeof(gtthread_t));
 	gtthread_create(&t1, (void *) crapfn, NULL);
 	gtthread_create(&t2, (void *) morecrapfn, NULL);
+	gtthread_join(t2, NULL);
 	//gtthread_create(t3, (void *) crapdontstopfn, NULL);
 	while(1);
 	printf("AAAnd we're back\n");
