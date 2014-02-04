@@ -34,6 +34,7 @@ ucontext_t main_context;
 
 void wrapper(void *(*fn) (void *), void *args) {
 	void *retval = fn(args);
+	task_queue->head->ret = retval;
 	puts("Exit gonna be called from wrapper");
 	gtthread_exit(retval);
 }
@@ -57,7 +58,7 @@ gtthread_t* get_joinfree() {
 	gtthread_t *t; 
 	while(t != NULL) {
 		t = task_queue->head->next;
-		if(t->state != JOINING) 
+		if(t->state == READY) 
 			return t;
 		else
 			headtotail();
@@ -92,7 +93,6 @@ void fun_alarm_handler(int sig) {
 		printf("Next tid is %d\n", current_head->tid);
 		printf("Current context is null.\n");
 	}
-
 	swapcontext(&(task_queue->tail->context), &(task_queue->head->context));
 	return;
 }
@@ -112,9 +112,12 @@ void headtotail(){
 		return;
 	}
 	current_head = task_queue->head;
+	if(current_head->state != JOINING)
+		current_head->state = READY;
 	task_queue->head = task_queue->head->next;
 	task_queue->tail->next = current_head;
 	task_queue->tail = current_head;
+	task_queue->tail->next = NULL;
 }
 int gtthread_init(long period) {
 	task_queue = (struct queue *) malloc(sizeof(struct queue));
@@ -179,11 +182,12 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 	thread_count++;
 	thread->context = new_context;
 	thread->tid = thread_count;
-	thread->state = RUNNING;
+	thread->state = READY;
 	thread->next = NULL;
 	thread->joiner_count = 0;
 	thread->ret = NULL;
 	thread->joinee_tid = 0;
+
 	//Put thread at the end of the queue
 	add_to_queue(thread);
 
@@ -191,6 +195,8 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 }
 
 int gtthread_join(gtthread_t joiner_thread, void **status) {
+	
+	//Mark the head as JOINING so that it waits
 	task_queue->head->state = JOINING;
 
 	//Increment joiners for current thread where join is called
@@ -207,10 +213,18 @@ int gtthread_join(gtthread_t joiner_thread, void **status) {
 	}
 	temp->joinee_tid = task_queue->head->tid;
 	
+	//Store status in joiner_thread
+	
 	//Reschedule to change executing thread
 	fun_alarm_handler(1);
 	
 	//Put retval in status
+	puts("Back in join");
+
+	if(status != NULL) {
+		*status = malloc(sizeof(int));
+		*status = temp->ret;
+	}
 	//status = joiner.ret;
 	//return status;
 
@@ -226,11 +240,13 @@ int gtthread_self() {
 }
 
 int gtthread_exit(void *retval) {
+
 	gtthread_t *current_head = task_queue->head;
-	gtthread_t *new_head = current_head->next;
+	gtthread_t *new_head = task_queue->head->next; //get_joinfree();
 	
 	//Assign retval to the executing head before it exits
 	task_queue->head->ret = retval;
+	printf("Return value from exit is %d\n", (int) current_head->ret);
 
 	//Get current head and mark it has FINISHED.
 	current_head = task_queue->head;
@@ -246,8 +262,6 @@ int gtthread_exit(void *retval) {
 	//New head is the head's next thread.
 	task_queue->head = new_head;
 
-	//sleep(1);
-
 	//Swap the new head in.
 	swapcontext(&(current_head->context), &(new_head->context));
 	return 0;
@@ -259,18 +273,22 @@ void crapfn() {
 	while(1);
 }
 
-void morecrapfn() {
+void *morecrapfn() {
 	printf("more crap\n");
 	printf("Exiting peacefully.\n");
+	return (void*)666;
 }
 
 int main() {
 	gtthread_init(3);
 	gtthread_t t1, t2;
+
+	void *thread_return = NULL;
 	//gtthread_t *t3 = (struct gtthread_t *) malloc(sizeof(gtthread_t));
 	gtthread_create(&t1, (void *) crapfn, NULL);
 	gtthread_create(&t2, (void *) morecrapfn, NULL);
-	gtthread_join(t2, NULL);
+	gtthread_join(t2, &thread_return);
+	printf("Thread return %d\n", *(long*)&thread_return);
 	//gtthread_create(t3, (void *) crapdontstopfn, NULL);
 	while(1);
 	printf("AAAnd we're back\n");
