@@ -7,6 +7,7 @@
 #define READY 2
 #define FINISHED 3
 #define JOINING 4
+#define CANCELLED 5
 
 typedef struct thread_t{
 	int tid;
@@ -239,17 +240,35 @@ int gtthread_self() {
 	return task_queue->head->tid;
 }
 
+int gtthread_cancel(gtthread_t thread) {
+	gtthread_t *temp = get_thread(thread.tid);
+	if(temp != NULL) {
+		if (task_queue->head->tid == temp->tid) {
+			gtthread_exit();
+			temp->state = CANCELLED;
+			return 0;
+		}
+		else {
+			temp->state = CANCELLED;
+			return 0;
+		}
+	}
+	else {
+		printf("Thread not found.\n");
+		return -1;
+	}
+}
+
+			
 int gtthread_exit(void *retval) {
 
 	gtthread_t *current_head = task_queue->head;
-	gtthread_t *new_head = task_queue->head->next; //get_joinfree();
 	
 	//Assign retval to the executing head before it exits
 	task_queue->head->ret = retval;
 	printf("Return value from exit is %d\n", (int) current_head->ret);
 
-	//Get current head and mark it has FINISHED.
-	current_head = task_queue->head;
+	//Mark current thread as FINISHED.
 	current_head->state = FINISHED;
 
 	//Decrement joinee count for the thread which this thread wants to join
@@ -260,6 +279,7 @@ int gtthread_exit(void *retval) {
 	joinee_thread->state = READY;
 
 	//New head is the head's next thread.
+	gtthread_t *new_head = get_joinfree();
 	task_queue->head = new_head;
 
 	//Swap the new head in.
