@@ -1,6 +1,7 @@
 #include "template.h"
 #include <sys/time.h>
 #include <ucontext.h>
+#include "gtthread.h"
 
 #define MEM 64000
 #define RUNNING 1
@@ -9,7 +10,7 @@
 #define JOINING 4
 #define CANCELLED 5
 
-typedef struct thread_t{
+/*typedef struct thread_t{
 	int tid;
 	struct	thread_t *next;
 	ucontext_t context;
@@ -17,7 +18,7 @@ typedef struct thread_t{
 	int joiner_count;
 	void *ret;
 	int joinee_tid;
-}gtthread_t;
+}gtthread_t;*/
 
 struct queue {
 	gtthread_t *head;
@@ -68,7 +69,7 @@ gtthread_t* get_joinfree() {
 }
 
 void fun_alarm_handler(int sig) {
-	printf("Thread quantum expired.\n");
+	printf("Rescheduling...\n");
 	gtthread_t *current_thread = task_queue->head;
 	printf("Current running thread is %d\n", current_thread->tid);
 	if(current_thread->next != NULL) {
@@ -81,8 +82,6 @@ void fun_alarm_handler(int sig) {
 		return;
 	}
 	printf("Thread %d moved to head.\n", task_queue->head->tid);
-	if(task_queue->head->tid == 1)
-		sleep(1);
 	gtthread_t *tail_thread = task_queue->tail;
 	task_queue->tail = current_thread;
 
@@ -94,6 +93,12 @@ void fun_alarm_handler(int sig) {
 		printf("Next tid is %d\n", current_head->tid);
 		printf("Current context is null.\n");
 	}
+	
+	//Reset timer
+	setitimer(ITIMER_REAL, &timer, NULL);
+	
+	task_queue->tail->state = READY;
+	task_queue->head->state = RUNNING;
 	swapcontext(&(task_queue->tail->context), &(task_queue->head->context));
 	return;
 }
@@ -120,7 +125,7 @@ void headtotail(){
 	task_queue->tail = current_head;
 	task_queue->tail->next = NULL;
 }
-int gtthread_init(long period) {
+void gtthread_init(long period) {
 	task_queue = (struct queue *) malloc(sizeof(struct queue));
 	task_queue->head = (struct gtthread_t *) malloc(sizeof(gtthread_t));
 	task_queue->tail= (struct gtthread_t *) malloc(sizeof(gtthread_t));
@@ -139,11 +144,10 @@ int gtthread_init(long period) {
 	printf("As per init, current tail tid is %d\n", task_queue->tail->tid);
 
 	//Initialize timer struct
-	timer.it_interval.tv_sec = period;
-	timer.it_interval.tv_usec = 0;
-	timer.it_value.tv_sec = period;
-	timer.it_value.tv_usec = 0;
-
+	timer.it_interval.tv_sec = 0;
+	timer.it_interval.tv_usec = period;
+	timer.it_value.tv_sec = 0;
+	timer.it_value.tv_usec = period;
 
 	/*Test timer values
         struct itimerval timerval;
@@ -156,10 +160,6 @@ int gtthread_init(long period) {
 
 	//Set the timer
 	setitimer(ITIMER_REAL, &timer, NULL);
-
-	
-//task_queue->head
-	
 }
 
 int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
@@ -232,23 +232,56 @@ int gtthread_join(gtthread_t joiner_thread, void **status) {
 	return 0;
 }
 
-int gtthread_yield() {
-	headtotail();
-	return 0;
-}
+void gtthread_exit(void *retval) {
+
+	gtthread_t *current_head = task_queue->head;
 	
-int gtthread_self() {
-	return task_queue->head->tid;
+	//Assign retval to the executing head before it exits
+	task_queue->head->ret = retval;
+	printf("Return value from exit is %d\n", (int) current_head->ret);
+
+	//Mark current thread as FINISHED.
+	task_queue->head->state = FINISHED;
+
+	//Decrement joinee count for the thread which this thread wants to join
+	gtthread_t *joinee_thread;// = (struct gtthread_t *) malloc(sizeof(gtthread_t));
+	int joinee_tid = task_queue->head->joinee_tid;
+	if(joinee_tid != 0) {
+		joinee_thread = get_thread(joinee_tid);
+		joinee_thread->joiner_count = joinee_thread->joiner_count - 1;
+		joinee_thread->state = READY;
+	}
+
+	//New head is the head's next thread.
+	task_queue->head = task_queue->head->next;
+	gtthread_t *new_head = get_joinfree();
+	task_queue->head = new_head;
+
+	//Swap the new head in.
+	swapcontext(&(current_head->context), &(new_head->context));
+	return;
 }
 
+int gtthread_yield(void) {
+	headtotail();
+	fun_alarm_handler(SIGALRM);
+	return 0;
+}
+
+int gtthread_equal(gtthread_t t1, gtthread_t t2) {
+	if (t1.tid == t2.tid)
+		return 1;
+	else
+		return 0;
+}
 int gtthread_cancel(gtthread_t thread) {
 	gtthread_t *temp = get_thread(thread.tid);
 	if(temp != NULL) {
-		if (task_queue->head->tid == temp->tid) {
-			gtthread_exit();
-			temp->state = CANCELLED;
-			return 0;
-		}
+	if (task_queue->head->tid == temp->tid) {
+		gtthread_exit(thread.ret);
+		temp->state = CANCELLED;
+		return 0;
+	}
 		else {
 			temp->state = CANCELLED;
 			return 0;
@@ -259,30 +292,9 @@ int gtthread_cancel(gtthread_t thread) {
 		return -1;
 	}
 }
-
-void gtthread_exit(void *retval) {
-
-	gtthread_t *current_head = task_queue->head;
-	
-	//Assign retval to the executing head before it exits
-	task_queue->head->ret = retval;
-	printf("Return value from exit is %d\n", (int) current_head->ret);
-
-	//Mark current thread as FINISHED.
-	current_head->state = FINISHED;
-
-	//Decrement joinee count for the thread which this thread wants to join
-	gtthread_t *joinee_thread;// = (struct gtthread_t *) malloc(sizeof(gtthread_t));
-	int joinee_tid = current_head->joinee_tid;
-	joinee_thread = get_thread(joinee_tid);
-	joinee_thread->joiner_count = joinee_thread->joiner_count - 1;
-	joinee_thread->state = READY;
-
-	//New head is the head's next thread.
-	gtthread_t *new_head = get_joinfree();
-	task_queue->head = new_head;
-
-	//Swap the new head in.
-	swapcontext(&(current_head->context), &(new_head->context));
-	return;
+gtthread_t gtthread_self(void) {
+	gtthread_t self_t;
+	self_t = *(task_queue->head);
+	return self_t;
 }
+

@@ -1,96 +1,61 @@
+#ifndef __GTTHREAD_H
+#define __GTTHREAD_H
+
 #include "template.h"
 #include <sys/time.h>
 #include <ucontext.h>
 
-#define MEM 64000
-#define RUNNING 1
-#define READY 1
-
 typedef struct thread_t{
-	int tid;
-	struct	thread_t *next;
-	ucontext_t *context;
-	int state;
+        int tid;
+        struct  thread_t *next;
+        ucontext_t context;
+        int state;
+        int joiner_count;
+        void *ret;
+        int joinee_tid;
 }gtthread_t;
 
-struct queue {
-	gtthread_t *head;
-	gtthread_t *tail;
-};
+/* Must be called before any of the below functions. Failure to do so may
+ * result in undefined behavior. 'period' is the scheduling quantum (interval)
+ * in microseconds (i.e., 1/1000000 sec.). */
+void gtthread_init(long period);
 
-//Declare a global task queue.
-struct queue *task_queue;
+/* see man pthread_create(3); the attr parameter is omitted, and this should
+ * behave as if attr was NULL (i.e., default attributes) */
+int  gtthread_create(gtthread_t *thread,
+                     void *(*start_routine)(void *),
+                     void *arg);
 
-//Some global variables
-int thread_count = 1;
+/* see man pthread_join(3) */
+int  gtthread_join(gtthread_t thread, void **status);
 
-void fun_alarm_handler(int sig) {
-	printf("Thread quantum expired.\n");
-	gtthread_t *current_thread = task_queue->head;
-	task_queue->head = current_thread->next;
-	gtthread_t *tail_thread = task_queue->tail;
-	task_queue->tail = current_thread;
+/* gtthread_detach() does not need to be implemented; all threads should be
+ * joinable */
 
-	//Swap context
-	//ucontext_t *current_context = getcontext 
-}
+/* see man pthread_exit(3) */
+void gtthread_exit(void *retval);
 
-int gtthread_init(long period) {
-	//Create dummy thread for main and make it as queue head.
-	gtthread_t main_thread;
-	ucontext_t main_context;
-	getcontext(&main_context);
-	main_thread.tid = 1;
-	main_thread.state = RUNNING;
-	main_thread.context = main_context;
-	task_queue->head = &main_thread;
+/* see man sched_yield(2) */
+int gtthread_yield(void);
 
-	//Initialize timer struct
-	struct itimerval timer;
-	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = period;
-	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = 0;
+/* see man pthread_equal(3) */
+int  gtthread_equal(gtthread_t t1, gtthread_t t2);
 
-	//Set the timer
-	setitimer(ITIMER_VIRTUAL, &timer, NULL);
+/* see man pthread_cancel(3); but deferred cancelation does not need to be
+ * implemented; all threads are canceled immediately */
+int  gtthread_cancel(gtthread_t thread);
 
+/* see man pthread_self(3) */
+gtthread_t gtthread_self(void);
 
-	//Register signal handler
-	struct sigaction alarm_handler;
-	alarm_handler.sa_handler = fun_alarm_handler;
-	sigaction(SIGALRM, &alarm_handler, NULL);
-	
-	//task_queue->head
-	
-}
+/* see man pthread_mutex(3); except init does not have the mutexattr parameter,
+ * and should behave as if mutexattr is NULL (i.e., default attributes); also,
+ * static initializers do not need to be implemented */
+//int  gtthread_mutex_init(gtthread_mutex_t *mutex);
+//int  gtthread_mutex_lock(gtthread_mutex_t *mutex);
+//int  gtthread_mutex_unlock(gtthread_mutex_t *mutex);
 
-int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
-	
-	//Create new context and swap with current context
-	ucontext_t new_context;
-	ucontext_t old_context;
-	old_context = *(task_queue->head->context); //fix pointer
-	getcontext(&new_context);
-	getcontext(&old_context);
-	new_context.uc_link=0;
-	new_context.uc_stack.ss_sp=malloc(MEM);
-	new_context.uc_stack.ss_size=MEM;
-	new_context.uc_stack.ss_flags=0;
-	makecontext(&new_context, (void *) fn, 0);
-	swapcontext(&old_context, &new_context);
-	
-	//Increment thread count
-	thread_count++;
-	thread->context = &new_context;
-	thread->tid = thread_count;
-	thread->state = RUNNING;
-	thread->next = task_queue->head;
+/* gtthread_mutex_destroy() and gtthread_mutex_trylock() do not need to be
+ * implemented */
 
-	//reset timer
-
-	return 1;
-}
-
-
-
+#endif // __GTTHREAD_H
