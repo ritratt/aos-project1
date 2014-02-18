@@ -13,7 +13,7 @@ long g_return_values[NUM_THREADS];
 void* worker(void* arg)
 {
 	long i = (long) arg;
-	printf("self %d\n", gtthread_self());
+	//printf("self %d\n", gtthread_self());
 	gtthread_exit((void*) g_return_values[i]);
 	return NULL;
 }
@@ -50,6 +50,5 @@ int main()
 		}
 	}
 
-	printf("Kuch bhi..\n");
 	return 0;
 }

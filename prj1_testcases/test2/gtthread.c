@@ -36,7 +36,7 @@ ucontext_t main_context;
 
 void wrapper(void *(*fn) (void *), void *args) {
 	void *retval = fn(args);
-	puts("Exit gonna be called from wrapper");
+	//puts("Exit gonna be called from wrapper");
 	gtthread_exit(retval);
 }
 	
@@ -78,7 +78,7 @@ int get_task_queue_length() {
 		count++;
 		temp = temp->next;
 	}
-	printf("Count is %d\n", count);
+	//printf("Count is %d\n", count);
 	return count;
 }
 
@@ -101,9 +101,9 @@ gtthread_t* get_joinfree() {
 }
 
 void fun_alarm_handler(int sig) {
-	printf("Rescheduling...\n");
+	//printf("Rescheduling...\n");
 	gtthread_t *current_thread = task_queue->head;
-	printf("Current running thread is %d\n", current_thread->tid);
+	//printf("Current running thread is %d\n", current_thread->tid);
 	if(current_thread->next != NULL) {
 		task_queue->head = get_joinfree();
 		if (task_queue->head == NULL)
@@ -115,7 +115,7 @@ void fun_alarm_handler(int sig) {
 		printf("Only one thread in queue. Returning.\n");
 		return;
 	}
-	printf("Thread %d moved to head.\n", task_queue->head->tid);
+	//printf("Thread %d moved to head.\n", task_queue->head->tid);
 //	gtthread_t *tail_thread = task_queue->tail;
 	task_queue->tail = current_thread;
 	task_queue->tail->next = NULL;
@@ -139,7 +139,7 @@ void fun_alarm_handler(int sig) {
 
 void add_to_queue(gtthread_t *new_tail) {
 	gtthread_t *current_tail = task_queue->tail;
-	printf("Current tail tid is %d\n", task_queue->tail->tid);
+	//printf("Current tail tid is %d\n", task_queue->tail->tid);
 	current_tail->next = new_tail;
 	new_tail->next = NULL;
 	task_queue->tail = new_tail;
@@ -281,7 +281,7 @@ void gtthread_exit(void *retval) {
 
 	//Assign retval to the executing head before it exits
 	task_queue->head->ret = retval;
-	printf("Return value from exit is %d as per thread struct and as per arg\n", (int) current_head->ret);
+	//printf("Return value from exit is %d as per thread struct and as per arg\n", (int) current_head->ret);
 
 	//Mark current thread as FINISHED.
 	task_queue->head->state = FINISHED;

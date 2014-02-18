@@ -1,0 +1,23 @@
+
+-What Linux platform do you use?
+I used Ubuntu 12.10 32-bit. I know we were supposed to use 64 bit but my laptop broke and the only reliable system I had at my disposal was a 1GB laptop. Using a remote would have been too time consuming.
+
+-How the preemptive scheduler is implemented.
+The scheduler is the timer signal handler. When called (every time the timer expires or otherwise), the shceduler swaps the context of the current thread and the next ready thread in queue. Once done, it resets the timer.
+
+-How to compile your library and run your program.
+Just run make.
+
+-How you prevent deadlocks in your Dining Philosophers solution.
+The logic behind my solution is that:
+	-adjacent philosophers are always different handed i.e. right handed/left handed.
+	-a philosopher picks up the second chopstick only when the first chopstick was successfully acquired.
+Due to the conditions above, there is never chaining and thus deadlocks are prevented.
+
+-Any thoughts you have on the project, including things that work especially well or which don't work.
+Following is substandard and buggy:
+	-Join
+	-Scheduler
+In all, the library is lightweight and easy to use. I solved dining philosopher without needing any advanced functions!
+However, I initially started off implementing the library using the clone() system call with appropriate flags. But I got stuck due to the RR scheduler. This is something I would want to explore further.
+

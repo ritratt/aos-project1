@@ -15,6 +15,11 @@ typedef struct thread_t{
         int joinee_tid;
 }gtthread_t;
 
+typedef struct mutex_t {
+	int mutex;
+	int thread_id;
+} gtthread_mutex_t;
+
 /* Must be called before any of the below functions. Failure to do so may
  * result in undefined behavior. 'period' is the scheduling quantum (interval)
  * in microseconds (i.e., 1/1000000 sec.). */

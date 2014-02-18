@@ -36,7 +36,6 @@ ucontext_t main_context;
 
 void wrapper(void *(*fn) (void *), void *args) {
 	void *retval = fn(args);
-	task_queue->head->ret = retval;
 	puts("Exit gonna be called from wrapper");
 	gtthread_exit(retval);
 }
@@ -55,17 +54,50 @@ gtthread_t* get_thread(int thread_id) {
 	}
 	return NULL;
 }
-
+/*
 gtthread_t* get_joinfree() {
 	gtthread_t *t; 
+	t = task_queue->head;
 	while(t != NULL) {
 		t = task_queue->head->next;
 		if(t->state == READY) 
 			return t;
 		else
+		{
+			printf("Calling headtotail\n");
 			headtotail();
+		}
 	}
 	return t;
+}*/
+
+int get_task_queue_length() {
+	gtthread_t *temp = task_queue->head;
+	int count = 0;
+	while(temp != NULL) {
+		count++;
+		temp = temp->next;
+	}
+	printf("Count is %d\n", count);
+	return count;
+}
+
+gtthread_t* get_joinfree() {
+        gtthread_t *t;
+        t = task_queue->head;
+	int c = get_task_queue_length();
+	int i = 0;
+        while(i < c) {
+                t = task_queue->head->next;
+                if(t->state == READY || t->state == RUNNING)
+                        return t;
+                else
+                {
+			i++;
+                        headtotail();
+                }
+        }
+        return NULL;
 }
 
 void fun_alarm_handler(int sig) {
@@ -74,6 +106,8 @@ void fun_alarm_handler(int sig) {
 	printf("Current running thread is %d\n", current_thread->tid);
 	if(current_thread->next != NULL) {
 		task_queue->head = get_joinfree();
+		if (task_queue->head == NULL)
+			exit(1);
 		//task_queue->head = task_queue->head->next;
 		task_queue->tail->next = current_thread;
 	}
@@ -82,22 +116,22 @@ void fun_alarm_handler(int sig) {
 		return;
 	}
 	printf("Thread %d moved to head.\n", task_queue->head->tid);
-	gtthread_t *tail_thread = task_queue->tail;
+//	gtthread_t *tail_thread = task_queue->tail;
 	task_queue->tail = current_thread;
-
+	task_queue->tail->next = NULL;
 	//Swap context
 	ucontext_t current_context = current_thread->context;
-	gtthread_t *current_head = task_queue->head;
-	ucontext_t next_context = current_head->context;
-	if(&current_context == NULL) {
+	ucontext_t next_context = task_queue->head->context;
+	/*if(&current_context == NULL) {
 		printf("Next tid is %d\n", current_head->tid);
 		printf("Current context is null.\n");
-	}
+	}*/
 	
 	//Reset timer
 	setitimer(ITIMER_REAL, &timer, NULL);
 	
-	task_queue->tail->state = READY;
+	if(task_queue->tail->state == RUNNING)
+		task_queue->tail->state = READY;
 	task_queue->head->state = RUNNING;
 	swapcontext(&(task_queue->tail->context), &(task_queue->head->context));
 	return;
@@ -118,7 +152,7 @@ void headtotail(){
 		return;
 	}
 	current_head = task_queue->head;
-	if(current_head->state != JOINING)
+	if(current_head->state != JOINING && current_head->state != CANCELLED && current_head->state != FINISHED) 
 		current_head->state = READY;
 	task_queue->head = task_queue->head->next;
 	task_queue->tail->next = current_head;
@@ -199,6 +233,14 @@ int gtthread_create(gtthread_t *thread, void *(*fn) (void *), void *args) {
 
 int gtthread_join(gtthread_t joiner_thread, void **status) {
 	
+	if(joiner_thread.state == FINISHED) {
+		if(status != NULL) {
+			*status = malloc(sizeof(int));
+			*status = joiner_thread.ret;
+		}
+	return 0;
+	}
+		
 	//Mark the head as JOINING so that it waits
 	task_queue->head->state = JOINING;
 
@@ -235,6 +277,7 @@ int gtthread_join(gtthread_t joiner_thread, void **status) {
 void gtthread_exit(void *retval) {
 
 	gtthread_t *current_head = task_queue->head;
+	printf("gtthread exiting %d\n", task_queue->head->tid);
 
 	//Assign retval to the executing head before it exits
 	task_queue->head->ret = retval;
@@ -257,14 +300,16 @@ void gtthread_exit(void *retval) {
 			return;
 		}
 	}
-
+/*
 	//New head is the head's next thread.
 	task_queue->head = task_queue->head->next;
 	gtthread_t *new_head = get_joinfree();
 	task_queue->head = new_head;
 
 	//Swap the new head in.
-	swapcontext(&(current_head->context), &(new_head->context));
+	swapcontext(&(current_head->context), &(new_head->context));*/
+	setitimer(ITIMER_REAL, &timer, NULL);
+	fun_alarm_handler(1);
 	return;
 }
 
@@ -280,6 +325,7 @@ int gtthread_equal(gtthread_t t1, gtthread_t t2) {
 	else
 		return 0;
 }
+
 int gtthread_cancel(gtthread_t thread) {
 	gtthread_t *temp = get_thread(thread.tid);
 	if(temp != NULL) {
